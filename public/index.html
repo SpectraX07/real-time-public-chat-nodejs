@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Public Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #chat-container {
+            width: 60%;
+            background: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        #chat-header {
+            background-color: #007BFF;
+            padding: 15px;
+            color: white;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        #chat-body {
+            display: flex;
+            height: 400px;
+        }
+
+        #userList {
+            width: 20%;
+            background: #f1f1f1;
+            padding: 10px;
+            border-right: 1px solid #ddd;
+            list-style-type: none;
+            overflow-y: auto; /* Enable vertical scrolling */
+            height: 100%; /* Full height of the chat body */
+        }
+
+        #userList li {
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+        }
+
+        #messages {
+            width: 80%;
+            padding: 10px;
+            overflow-y: auto;
+            height: 100%;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 15px;
+            border-radius: 15px;
+            background-color: #f1f1f1;
+            max-width: 75%;
+        }
+
+        .message.self {
+            background-color: #007BFF;
+            color: white;
+            align-self: flex-end;
+        }
+
+        #chat-footer {
+            padding: 10px;
+            background: #f4f4f9;
+            display: flex;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        #sendButton,
+        #uploadButton {
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin-left: 5px;
+            cursor: pointer;
+        }
+
+        #uploadButton {
+            background-color: #28A745;
+        }
+
+        img,
+        video {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-container">
+        <div id="chat-header">
+            Public Chat Application
+        </div>
+        <div id="chat-body">
+            <ul id="userList"></ul>
+            <div id="messages"></div>
+        </div>
+        <div id="chat-footer">
+            <input id="messageInput" type="text" placeholder="Type your message" />
+            <input id="uploadInput" type="file" style="display: none;" accept="image/*,video/*" />
+            <button id="uploadButton">Upload</button>
+            <button id="sendButton">Send</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let alias = '';
+
+        socket.on('requestAlias', () => {
+            alias = prompt("Please enter your unique alias:");
+            socket.emit('submitAlias', alias);
+        });
+
+        socket.on('aliasError', (error) => {
+            alert(error);
+            alias = prompt("Alias taken, please choose another:");
+            socket.emit('submitAlias', alias);
+        });
+
+        socket.on('userJoined', (message) => {
+            addMessage(message, 'system');
+        });
+
+        socket.on('userLeft', (message) => {
+            addMessage(message, 'system');
+        });
+
+        socket.on('updateUserList', (users) => {
+            const userList = document.getElementById('userList');
+            userList.innerHTML = '';
+
+            users.forEach(user => {
+                const avatarUrl = `https://robohash.org/${encodeURIComponent(user)}?set=set3`;
+                userList.innerHTML += `
+                    <li>
+                        <img src="${avatarUrl}" alt="${user}" width="30" height="30" style="border-radius: 50%; margin-right: 10px;">
+                        ${user}
+                    </li>`;
+            });
+        });
+
+        socket.on('chatMessage', (data) => {
+            addMessage(`${data.alias}: ${data.message}`, data.alias === alias ? 'self' : 'other');
+        });
+
+        socket.on('mediaMessage', (data) => {
+            let mediaElement = '';
+            if (data.mediaType.startsWith('image')) {
+                mediaElement = `<img src="${data.media}" />`;
+            } else if (data.mediaType.startsWith('video')) {
+                mediaElement = `<video controls src="${data.media}"></video>`;
+            }
+            addMessage(`${data.alias}:`, data.alias === alias ? 'self' : 'other', mediaElement);
+        });
+
+        document.getElementById('sendButton').addEventListener('click', (event) => {
+            event.preventDefault(); // Prevent default action
+            const message = document.getElementById('messageInput').value;
+            if (message.trim() !== '') {
+                socket.emit('chatMessage', message);
+                document.getElementById('messageInput').value = '';
+            }
+        });
+
+        document.getElementById('uploadButton').addEventListener('click', (event) => {
+            event.preventDefault(); // Prevent default action
+            document.getElementById('uploadInput').click();
+        });
+
+        document.getElementById('uploadInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    socket.emit('mediaMessage', { media: reader.result, mediaType: file.type });
+                    document.getElementById('uploadInput').value = ''; // Reset the input for future uploads
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function addMessage(message, type, media = '') {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            if (type === 'self') {
+                messageElement.classList.add('self');
+            }
+            messageElement.innerHTML = message + (media ? `<br>${media}` : '');
+            document.getElementById('messages').appendChild(messageElement);
+        }
+    </script>
+</body>
+
+</html>
